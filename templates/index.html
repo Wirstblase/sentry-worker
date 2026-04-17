@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentry Processor</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <header class="glass-panel main-header">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                <h1>Sentry Processor</h1>
+            </div>
+            <div class="status-indicator">
+                <span id="processor-status-dot" class="dot red"></span>
+                <span id="processor-status-text">Stopped</span>
+            </div>
+        </header>
+
+        <main class="content-grid">
+            <div class="glass-panel video-container">
+                <h2>Live Stream Analytics</h2>
+                <div class="video-wrapper">
+                    <img id="video-stream" src="/video_feed" alt="Video Stream">
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <div class="glass-panel stats-panel">
+                    <h2>Capture Statistics</h2>
+                    <div class="stat-row">
+                        <span>Pending Downloads:</span>
+                        <span id="stat-pending" class="highlight">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span>Downloaded Locally:</span>
+                        <span id="stat-downloaded" class="highlight">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span>Inactivity Timer:</span>
+                        <span id="stat-timer">0s</span>
+                    </div>
+                </div>
+
+                <div class="glass-panel control-panel">
+                    <h2>Controls</h2>
+                    <div class="button-group">
+                        <button id="btn-start" class="btn primary">Start</button>
+                        <button id="btn-stop" class="btn secondary">Stop</button>
+                    </div>
+                </div>
+
+                <div class="glass-panel settings-panel">
+                    <h2>Model Settings</h2>
+                    <div class="input-group">
+                        <label for="select-model">Model Size</label>
+                        <select id="select-model">
+                            <option value="yolo11n.pt">Nano (Fastest)</option>
+                            <option value="yolo11s.pt">Small</option>
+                            <option value="yolo11m.pt">Medium</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="input-conf">Confidence Threshold (<span id="val-conf"></span>)</label>
+                        <input type="range" id="input-conf" min="0.1" max="1.0" step="0.05">
+                    </div>
+                    <div class="input-group">
+                        <label for="input-cooldown">Cooldown (s) (<span id="val-cooldown"></span>)</label>
+                        <input type="range" id="input-cooldown" min="1" max="60" step="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="input-blur">Blur Threshold (<span id="val-blur"></span>)</label>
+                        <input type="range" id="input-blur" min="0" max="100" step="1">
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
