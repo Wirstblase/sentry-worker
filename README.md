@@ -1,6 +1,6 @@
 # Sentry worker
 
-The Sentry Stream Processor is a simple real-time video stream analyzer designed to process mjpeg video streams. Using light computer vision models, it tracks custom target objects (currently just birds) and automatically triggers a photo capture.
+### Simple real-time video stream analyzer designed to process mjpeg video streams. Using light computer vision models, it tracks custom target objects (currently just birds) and automatically triggers a photo capture. This is mainly a low-effort project made for fun and it is absolutely a work in progress.
 
 ## Features
 
@@ -8,7 +8,7 @@ The Sentry Stream Processor is a simple real-time video stream analyzer designed
 - **Cross-Platform Hardware Acceleration**: Automatically utilizes Apple Metal Performance Shaders (MPS) on M-series Macs or NVIDIA CUDA on Windows systems for near-zero latency inference.
 - **Smart Capture Heuristics**: Evaluates image sharpness (Laplacian variance) and temporal stability to ensure photos are only taken when the subject is clear and in-frame.
 - **Deferred Photo Archiving**: Intelligently monitors inactivity to download captured imagery only when the camera network is idle, preserving system bandwidth.
-- **Modern Web Dashboard**: Features a responsive, glassmorphism-styled UI for monitoring the live analytics stream and configuring inference thresholds instantly.
+- **Simple Web UI**: Simple web ui to configure parameters and see the stream and the model in action:) currently hard coded mostly
 
 ## Architecture
 
@@ -65,12 +65,12 @@ Once running, navigate to `http://localhost:8000` in your web browser (Firefox, 
 
 ## Configuration Parameters
 
-Parameters can be adjusted directly from the UI while the system is running:
+Some parameters can be adjusted directly from the UI while the system is running:
 
 - **Model Size**: Select between Nano, Small, and Medium YOLO network weights. Nano is recommended for strict real-time requirements.
-- **Confidence Threshold**: The minimum AI certainty required (0.0 to 1.0) for an object to be considered valid track geometry.
-- **Cooldown**: Duration in seconds to wait subsequent to a successful capture before engaging the shutter again.
-- **Blur Threshold**: The minimum acceptable variance of the Laplacian metric for the target's bounding box. Higher values demand sharper, non-blurred subjects.
+- **Confidence Threshold**: The minimum confidence score (0.0 to 1.0) for an object to be considered valid track geometry.
+- **Cooldown**: Duration in seconds to wait after a successful capture before taking another snapshot.
+- **Blur Threshold**: The minimum acceptable variance of the Laplacian metric for the target's bounding box. Higher values should result in sharper images (in theory)
 
 ## Project Structure
 
