@@ -1,13 +1,13 @@
 :root {
-    --bg-color: #0d1117;
-    --panel-bg: rgba(22, 27, 34, 0.7);
-    --panel-border: rgba(48, 54, 61, 0.8);
-    --accent: #00f0ff;
-    --accent-hover: #00c3cf;
-    --text-primary: #c9d1d9;
-    --text-secondary: #8b949e;
-    --danger: #f85149;
-    --success: #2ea043;
+    --bg-color: #0a171a;
+    --panel-bg: rgba(14, 34, 37, 0.7);
+    --panel-border: #1c434a;
+    --accent: #af8450;
+    --accent-hover: #bf9d73;
+    --text-primary: #edf6f8;
+    --text-secondary: #90cbd5;
+    --danger: #ef4444;
+    --success: #609f62;
 }
 
 * {
@@ -20,8 +20,8 @@ body {
     font-family: 'Inter', sans-serif;
     background-color: var(--bg-color);
     color: var(--text-primary);
-    background-image: radial-gradient(circle at top right, rgba(0, 240, 255, 0.05), transparent 40%),
-                      radial-gradient(circle at bottom left, rgba(0, 240, 255, 0.05), transparent 40%);
+    background-image: radial-gradient(circle at top right, rgba(175, 132, 80, 0.08), transparent 40%),
+                      radial-gradient(circle at bottom left, rgba(175, 132, 80, 0.08), transparent 40%);
     min-height: 100vh;
 }
 
@@ -167,7 +167,7 @@ body {
 .btn.primary:hover {
     background: var(--accent-hover);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 240, 255, 0.3);
+    box-shadow: 0 4px 12px rgba(175, 132, 80, 0.3);
 }
 
 .btn.secondary {
