@@ -1,6 +1,8 @@
 # Sentry worker
 
-Simple real-time video stream analyzer designed to process mjpeg video streams. It tracks custom target objects (currently just birds) using lightweight computer vision models and automatically triggers a photo capture. This is mainly a low-effort project made for fun and it is absolutely a work in progress.
+Simple real-time video stream analyzer designed to process mjpeg video streams. It tracks custom target objects (currently just birds) using lightweight computer vision models and automatically triggers a photo capture. 
+
+Disclaimer: This is mainly a low-effort project made for fun and it is absolutely a work in progress.
 
 ### Pre-requisites
 
