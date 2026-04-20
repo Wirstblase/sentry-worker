@@ -1,6 +1,8 @@
 import cv2
 import time
 import os
+import sys
+import subprocess
 import threading
 import logging
 import numpy as np
@@ -30,6 +32,9 @@ class StreamProcessor:
         self.target_class = 14  # COCO class 14 is "bird"
         self.consecutive_frames_required = 3
         
+        # snap!!!w
+        self._snap_sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "snap!.mp3")
+
         # Screenshot saving
         self.screenshot_dir = "screenshots"
         Path(self.screenshot_dir).mkdir(parents=True, exist_ok=True)
@@ -76,6 +81,35 @@ class StreamProcessor:
         # Higher variance laplacian = sharper image
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         return cv2.Laplacian(gray, cv2.CV_64F).var()
+
+    def _play_snap_sound(self):
+        """Play the snap sound file in a background thread (non-blocking)."""
+        def _play():
+            try:
+                if not os.path.exists(self._snap_sound_path):
+                    logger.warning(f"Snap sound file not found: {self._snap_sound_path}")
+                    return
+                if sys.platform == "darwin":
+                    subprocess.run(["afplay", self._snap_sound_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                elif sys.platform == "win32":
+                    subprocess.run(
+                        ["powershell", "-c", f'(New-Object Media.SoundPlayer "{self._snap_sound_path}").PlaySync()'],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    )
+                else:
+                    # Linux: try mpv, then ffplay, then aplay as fallbacks
+                    for cmd in (["mpv", "--no-video", self._snap_sound_path],
+                                ["ffplay", "-nodisp", "-autoexit", self._snap_sound_path]):
+                        try:
+                            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            return
+                        except FileNotFoundError:
+                            continue
+                    logger.warning("No suitable audio player found on Linux")
+            except Exception as e:
+                logger.error(f"Failed to play snap sound: {e}")
+
+        threading.Thread(target=_play, daemon=True).start()
 
     def _save_screenshot(self):
         """Save the current annotated frame (with bounding boxes) to the screenshots directory."""
@@ -181,6 +215,7 @@ class StreamProcessor:
                         if best_blur > self.blur_threshold:
                             if self.sentry_client.is_ready():
                                 logger.info(f"Triggering snap! Blur score: {best_blur:.2f}")
+                                self._play_snap_sound()
                                 self._save_screenshot()
                                 self.sentry_client.snap(mode="auto")
                                 self.last_snap_time = now
