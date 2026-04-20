@@ -1,8 +1,11 @@
 import cv2
 import time
+import os
 import threading
 import logging
 import numpy as np
+from datetime import datetime
+from pathlib import Path
 from ultralytics import YOLO
 from collections import deque
 
@@ -25,6 +28,10 @@ class StreamProcessor:
         self.blur_threshold = 10.0  # Laplacian variance threshold. Lower means more tolerant of blur.
         self.target_class = 14  # COCO class 14 is "bird"
         self.consecutive_frames_required = 5
+        
+        # Screenshot saving
+        self.screenshot_dir = "screenshots"
+        Path(self.screenshot_dir).mkdir(parents=True, exist_ok=True)
         
         # State
         self.last_snap_time = 0
@@ -58,6 +65,18 @@ class StreamProcessor:
         # Higher variance laplacian = sharper image
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         return cv2.Laplacian(gray, cv2.CV_64F).var()
+
+    def _save_screenshot(self):
+        """Save the current annotated frame (with bounding boxes) to the screenshots directory."""
+        if self.annotated_frame is not None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"detection_{timestamp}.jpg"
+            filepath = os.path.join(self.screenshot_dir, filename)
+            try:
+                cv2.imwrite(filepath, self.annotated_frame)
+                logger.info(f"Saved detection screenshot: {filepath}")
+            except Exception as e:
+                logger.error(f"Failed to save screenshot: {e}")
 
     def _process_loop(self):
         # We need to robustly handle stream drops
@@ -120,6 +139,7 @@ class StreamProcessor:
                             if best_blur > self.blur_threshold:
                                 if self.sentry_client.is_ready():
                                     logger.info(f"Triggering snap! Blur score: {best_blur:.2f}")
+                                    self._save_screenshot()
                                     self.sentry_client.snap(mode="auto")
                                     self.last_snap_time = now
                                     self.bird_history.clear() # Reset tracking

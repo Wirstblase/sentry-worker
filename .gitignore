@@ -21,3 +21,6 @@ env/
 
 # Downloads directory
 downloads/
+
+# Detection screenshots
+screenshots/
