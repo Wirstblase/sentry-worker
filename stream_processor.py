@@ -16,7 +16,8 @@ class StreamProcessor:
         self.sentry_client = sentry_client
         self.stream_url = stream_url
         self.running = False
-        self.thread = None
+        self._reader_thread = None
+        self._inference_thread = None
         
         # Inference settings
         self.model_name = "yolo11n.pt"  # default
@@ -27,7 +28,7 @@ class StreamProcessor:
         self.cooldown_seconds = 3
         self.blur_threshold = 2.0  # Laplacian variance threshold. Lower means more tolerant of blur.
         self.target_class = 14  # COCO class 14 is "bird"
-        self.consecutive_frames_required = 5
+        self.consecutive_frames_required = 3
         
         # Screenshot saving
         self.screenshot_dir = "screenshots"
@@ -37,6 +38,11 @@ class StreamProcessor:
         self.last_snap_time = 0
         self.current_frame = None
         self.annotated_frame = None
+        
+        # Latest frame shared between reader and inference threads
+        self._latest_frame = None
+        self._frame_lock = threading.Lock()
+        self._frame_event = threading.Event()
         
         # Tracking history for stability
         self.bird_history = deque(maxlen=self.consecutive_frames_required)
@@ -50,15 +56,20 @@ class StreamProcessor:
         if not self.running:
             self.running = True
             self.sentry_client.ensure_active()
-            self.thread = threading.Thread(target=self._process_loop, daemon=True)
-            self.thread.start()
-            logger.info("StreamProcessor started.")
+            self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
+            self._inference_thread = threading.Thread(target=self._inference_loop, daemon=True)
+            self._reader_thread.start()
+            self._inference_thread.start()
+            logger.info("StreamProcessor started (reader + inference threads).")
 
     def stop(self):
         if self.running:
             self.running = False
-            if self.thread:
-                self.thread.join(timeout=2)
+            self._frame_event.set()  # Unblock inference thread if waiting
+            if self._reader_thread:
+                self._reader_thread.join(timeout=3)
+            if self._inference_thread:
+                self._inference_thread.join(timeout=3)
             logger.info("StreamProcessor stopped.")
 
     def _calculate_blur(self, image):
@@ -78,89 +89,113 @@ class StreamProcessor:
             except Exception as e:
                 logger.error(f"Failed to save screenshot: {e}")
 
-    def _process_loop(self):
-        # We need to robustly handle stream drops
+    def _reader_loop(self):
         while self.running:
+            cap = None
             try:
-                logger.info(f"Connecting to stream: {self.stream_url}")
+                logger.info(f"[Reader] Connecting to stream: {self.stream_url}")
                 cap = cv2.VideoCapture(self.stream_url)
-                
+                # Minimize OpenCV's internal buffer to 1 frame
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
                 if not cap.isOpened():
-                    logger.error("Failed to open stream. Retrying in 5s...")
+                    logger.error("[Reader] Failed to open stream. Retrying in 5s...")
                     time.sleep(5)
                     continue
 
+                logger.info("[Reader] Stream connected, reading frames.")
                 while self.running and cap.isOpened():
                     ret, frame = cap.read()
                     if not ret:
-                        logger.warning("Stream read returned false")
+                        logger.warning("[Reader] Stream read returned false")
                         break
-                    
-                    self.current_frame = frame.copy()
-                    
-                    # Run inference
-                    results = self.model(frame, classes=[self.target_class], conf=self.confidence_threshold, verbose=False)
-                    
-                    self.annotated_frame = results[0].plot()
-                    
-                    boxes = results[0].boxes
-                    
-                    bird_detected = False
-                    best_box = None
-                    best_blur = 0
-                    
-                    if len(boxes) > 0:
-                        bird_detected = True
-                        # Evaluate all birds, pick one that's sharpest
-                        for box in boxes:
-                            x1, y1, x2, y2 = map(int, box.xyxy[0])
-                            
-                            # Ensure within bounds
-                            h, w = frame.shape[:2]
-                            x1, y1 = max(0, x1), max(0, y1)
-                            x2, y2 = min(w, x2), min(h, y2)
-                            
-                            crop = frame[y1:y2, x1:x2]
-                            if crop.size > 0:
-                                blur_score = self._calculate_blur(crop)
-                                if blur_score > best_blur:
-                                    best_blur = blur_score
-                                    best_box = box
 
-                    if bird_detected and best_box is not None:
-                        self.bird_history.append(True)
-                    else:
-                        self.bird_history.append(False)
-
-                    # Trigger logic
-                    now = time.time()
-                    if len(self.bird_history) == self.bird_history.maxlen and all(self.bird_history):
-                        if (now - self.last_snap_time) > self.cooldown_seconds:
-                            if best_blur > self.blur_threshold:
-                                if self.sentry_client.is_ready():
-                                    logger.info(f"Triggering snap! Blur score: {best_blur:.2f}")
-                                    self._save_screenshot()
-                                    self.sentry_client.snap(mode="auto")
-                                    self.last_snap_time = now
-                                    self.bird_history.clear() # Reset tracking
-                                else:
-                                    logger.warning("Sentry not ready for snap")
-                            else:
-                                logger.info(f"Bird detected but rejected due to blur. Score: {best_blur:.2f} < {self.blur_threshold}")
-
-                    # Draw visual indicator for 2 seconds after snap
-                    if (now - self.last_snap_time) < 2.0:
-                        cv2.putText(self.annotated_frame, "SNAP!", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 3, (0, 255, 255), 6, cv2.LINE_AA)
-
-                    # Small sleep to yield
-                    time.sleep(0.01)
+                    # Atomically publish the latest frame
+                    with self._frame_lock:
+                        self._latest_frame = frame
+                    self._frame_event.set()
 
             except Exception as e:
-                logger.error(f"Stream error: {e}")
+                logger.error(f"[Reader] Stream error: {e}")
                 time.sleep(2)
             finally:
-                if 'cap' in locals() and cap is not None:
+                if cap is not None:
                     cap.release()
+
+    def _inference_loop(self):
+        while self.running:
+            # Wait for a new frame to arrive (with timeout to allow clean shutdown)
+            if not self._frame_event.wait(timeout=1.0):
+                continue
+            self._frame_event.clear()
+
+            # Grab the latest frame (may skip many intermediate frames — that's the point)
+            with self._frame_lock:
+                frame = self._latest_frame
+                self._latest_frame = None
+            
+            if frame is None:
+                continue
+
+            self.current_frame = frame.copy()
+
+            try:
+                # Run inference
+                results = self.model(frame, classes=[self.target_class], conf=self.confidence_threshold, verbose=False)
+                
+                self.annotated_frame = results[0].plot()
+                
+                boxes = results[0].boxes
+                
+                bird_detected = False
+                best_box = None
+                best_blur = 0
+                
+                if len(boxes) > 0:
+                    bird_detected = True
+                    # Evaluate all birds, pick one that's sharpest
+                    for box in boxes:
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        
+                        # Ensure within bounds
+                        h, w = frame.shape[:2]
+                        x1, y1 = max(0, x1), max(0, y1)
+                        x2, y2 = min(w, x2), min(h, y2)
+                        
+                        crop = frame[y1:y2, x1:x2]
+                        if crop.size > 0:
+                            blur_score = self._calculate_blur(crop)
+                            if blur_score > best_blur:
+                                best_blur = blur_score
+                                best_box = box
+
+                if bird_detected and best_box is not None:
+                    self.bird_history.append(True)
+                else:
+                    self.bird_history.append(False)
+
+                # Trigger logic
+                now = time.time()
+                if len(self.bird_history) == self.bird_history.maxlen and all(self.bird_history):
+                    if (now - self.last_snap_time) > self.cooldown_seconds:
+                        if best_blur > self.blur_threshold:
+                            if self.sentry_client.is_ready():
+                                logger.info(f"Triggering snap! Blur score: {best_blur:.2f}")
+                                self._save_screenshot()
+                                self.sentry_client.snap(mode="auto")
+                                self.last_snap_time = now
+                                self.bird_history.clear() # Reset tracking
+                            else:
+                                logger.warning("Sentry not ready for snap")
+                        else:
+                            logger.info(f"Bird detected but rejected due to blur. Score: {best_blur:.2f} < {self.blur_threshold}")
+
+                # Draw visual indicator for 2 seconds after snap
+                if (now - self.last_snap_time) < 2.0:
+                    cv2.putText(self.annotated_frame, "SNAP!", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 3, (0, 255, 255), 6, cv2.LINE_AA)
+
+            except Exception as e:
+                logger.error(f"[Inference] Error processing frame: {e}")
 
     def get_frame(self):
         # Used for emitting mjpeg to frontend
