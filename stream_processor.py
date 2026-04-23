@@ -26,11 +26,11 @@ class StreamProcessor:
         self.model = YOLO(self.model_name)
         
         # Settings
-        self.confidence_threshold = 0.55
-        self.cooldown_seconds = 3
-        self.blur_threshold = 2.0  # Laplacian variance threshold. Lower means more tolerant of blur.
+        self.confidence_threshold = 0.45
+        self.cooldown_seconds = 2
+        self.blur_threshold = 1.0  # Laplacian variance threshold. Lower means more tolerant of blur.
         self.target_class = 14  # COCO class 14 is "bird"
-        self.consecutive_frames_required = 3
+        self.consecutive_frames_required = 2
         
         # snap!!!w
         self._snap_sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "snap!.mp3")

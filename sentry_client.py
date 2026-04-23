@@ -35,7 +35,7 @@ class SentryClient:
 
     def enable(self):
         try:
-            resp = requests.post(f"{self.base_url}/api/sentry/enable", timeout=5)
+            resp = requests.post(f"{self.base_url}/api/sentry/enable", timeout=15)
             if resp.status_code == 200:
                 return resp.json()
             else:
