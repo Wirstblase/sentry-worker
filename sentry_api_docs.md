@@ -2,6 +2,8 @@
 
 This document describes the API endpoints available for interacting with the **Sentry Mode** feature of the camera system. These endpoints are designed for external monitoring software to query the system status, toggle indefinite streaming, and capture images.
 
+> **External monitors should prefer the idempotent `POST /api/sentry/enable` and `POST /api/sentry/disable` endpoints.** `POST /api/sentry/toggle` is provided for interactive UI use only — it flips the current state and is therefore racy when called by multiple clients or after a startup-restore that already turned sentry mode on.
+
 ---
 
 ## `GET /api/sentry/status`
@@ -26,9 +28,56 @@ Retrieves the current status of Sentry Mode and, if active, provides information
 
 ---
 
+## `POST /api/sentry/enable`
+
+Idempotently enables Sentry Mode. When activated, Sentry Mode enforces continuous preview streaming, prevents the auto-standby timer from stopping the camera, and pauses background processing to ensure exclusive camera access.
+
+Safe to call repeatedly: if Sentry Mode is already active, this is a no-op and `already_active` will be `true`. The transition is performed atomically; concurrent callers will not race.
+
+**Response**
+- `200 OK` — Sentry Mode is on after this call.
+
+```json
+{
+  "active": true,
+  "already_active": false
+}
+```
+
+- `500 Internal Server Error` — Failed to activate sentry mode (e.g., the preview could not be started). No state has been persisted.
+
+```json
+{
+  "active": false,
+  "error": "Failed to start preview"
+}
+```
+
+---
+
+## `POST /api/sentry/disable`
+
+Idempotently disables Sentry Mode. The preview stream is left running (it is the user's responsibility to stop it via `POST /api/preview/stop` if desired); only the sentry-specific behaviour — exclusive camera access, OLED indicator, auto-standby suppression, and persisted `sentry_mode` flag — is cleared.
+
+Safe to call repeatedly: if Sentry Mode is already inactive, this is a no-op and `already_inactive` will be `true`.
+
+**Response**
+- `200 OK` — Sentry Mode is off after this call.
+
+```json
+{
+  "active": false,
+  "already_inactive": false
+}
+```
+
+---
+
 ## `POST /api/sentry/toggle`
 
-Toggles Sentry Mode on or off. When activated, Sentry Mode enforces continuous preview streaming, prevents the auto-standby timer from stopping the camera, and pauses background processing to ensure exclusive camera access.
+Flips Sentry Mode (on → off, off → on) atomically. Intended for interactive UI use.
+
+> **Not recommended for external monitoring software.** Two clients calling toggle near-simultaneously will cancel each other out, and after a server restart the persisted `sentry_mode` flag may be auto-restored before your monitor's first call — turning your "enable" toggle into an unintended "disable". Prefer `POST /api/sentry/enable` / `POST /api/sentry/disable`.
 
 **Response**
 - `200 OK` - Successfully toggled.

@@ -33,22 +33,22 @@ class SentryClient:
             logger.error(f"Failed to get sentry status: {e}")
         return {"active": False}
 
-    def toggle(self):
+    def enable(self):
         try:
-            resp = requests.post(f"{self.base_url}/api/sentry/toggle", timeout=5)
+            resp = requests.post(f"{self.base_url}/api/sentry/enable", timeout=5)
             if resp.status_code == 200:
                 return resp.json()
             else:
-                logger.error(f"Toggle failed: {resp.text}")
+                logger.error(f"Enable failed: {resp.text}")
         except requests.RequestException as e:
-            logger.error(f"Failed to toggle sentry mode: {e}")
+            logger.error(f"Failed to enable sentry mode: {e}")
         return {"active": False}
 
     def ensure_active(self):
         status = self.get_status()
         if not status.get("active", False):
-            logger.info("Sentry mode not active, toggling...")
-            self.toggle()
+            logger.info("Sentry mode not active, enabling...")
+            self.enable()
 
     def is_ready(self):
         try:
