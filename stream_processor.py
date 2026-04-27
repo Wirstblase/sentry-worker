@@ -1,3 +1,4 @@
+import csv
 import cv2
 import time
 import os
@@ -12,6 +13,14 @@ from ultralytics import YOLO
 from collections import deque
 
 logger = logging.getLogger(__name__)
+
+CLASS_NAME_ALIASES = {
+    "human": "person",
+    "automobile": "car",
+    "bike": "bicycle",
+    "motorbike": "motorcycle",
+    "aeroplane": "airplane",
+}
 
 class StreamProcessor:
     def __init__(self, sentry_client, stream_url="http://workshop-pi.local:5000/api/preview/stream"):
@@ -29,7 +38,7 @@ class StreamProcessor:
         self.confidence_threshold = 0.45
         self.cooldown_seconds = 2
         self.blur_threshold = 1.0  # Laplacian variance threshold. Lower means more tolerant of blur.
-        self.target_class = 14  # COCO class 14 is "bird"
+        self.target_classes = self._load_target_classes()
         self.consecutive_frames_required = 2
         
         # snap!!!w
@@ -50,7 +59,42 @@ class StreamProcessor:
         self._frame_event = threading.Event()
         
         # Tracking history for stability
-        self.bird_history = deque(maxlen=self.consecutive_frames_required)
+        self.detection_history = deque(maxlen=self.consecutive_frames_required)
+
+    #read detection_classes.csv and resolve object id
+    def _load_target_classes(self):
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "detection_classes.csv")
+
+        coco_name_to_id = {name.lower(): idx for idx, name in self.model.names.items()}
+
+        target_ids = []
+        try:
+            with open(config_path, newline="") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    for raw in row:
+                        name = raw.strip().lower()
+                        if not name:
+                            continue
+                        # Resolve aliases first
+                        resolved = CLASS_NAME_ALIASES.get(name, name)
+                        if resolved in coco_name_to_id:
+                            class_id = coco_name_to_id[resolved]
+                            if class_id not in target_ids:
+                                target_ids.append(class_id)
+                            logger.info(f"Detection class loaded: '{raw.strip()}' -> COCO id {class_id}")
+                        else:
+                            logger.warning(f"Unknown class name in detection_classes.csv: '{raw.strip()}' (resolved as '{resolved}')")
+        except FileNotFoundError:
+            logger.warning(f"detection_classes.csv not found at {config_path}, defaulting to bird (class 14)")
+            target_ids = [14]
+
+        if not target_ids:
+            logger.warning("No valid classes found in detection_classes.csv, defaulting to bird (class 14)")
+            target_ids = [14]
+
+        logger.info(f"Target detection classes: {target_ids}")
+        return target_ids
 
     def set_model(self, model_name):
         logger.info(f"Loading new model: {model_name}")
@@ -175,19 +219,19 @@ class StreamProcessor:
 
             try:
                 # Run inference
-                results = self.model(frame, classes=[self.target_class], conf=self.confidence_threshold, verbose=False)
+                results = self.model(frame, classes=self.target_classes, conf=self.confidence_threshold, verbose=False)
                 
                 self.annotated_frame = results[0].plot()
                 
                 boxes = results[0].boxes
                 
-                bird_detected = False
+                target_detected = False
                 best_box = None
                 best_blur = 0
                 
                 if len(boxes) > 0:
-                    bird_detected = True
-                    # Evaluate all birds, pick one that's sharpest
+                    target_detected = True
+                    # Evaluate all detections, pick one that's sharpest
                     for box in boxes:
                         x1, y1, x2, y2 = map(int, box.xyxy[0])
                         
@@ -203,14 +247,14 @@ class StreamProcessor:
                                 best_blur = blur_score
                                 best_box = box
 
-                if bird_detected and best_box is not None:
-                    self.bird_history.append(True)
+                if target_detected and best_box is not None:
+                    self.detection_history.append(True)
                 else:
-                    self.bird_history.append(False)
+                    self.detection_history.append(False)
 
                 # Trigger logic
                 now = time.time()
-                if len(self.bird_history) == self.bird_history.maxlen and all(self.bird_history):
+                if len(self.detection_history) == self.detection_history.maxlen and all(self.detection_history):
                     if (now - self.last_snap_time) > self.cooldown_seconds:
                         if best_blur > self.blur_threshold:
                             if self.sentry_client.is_ready():
@@ -219,11 +263,11 @@ class StreamProcessor:
                                 self._save_screenshot()
                                 self.sentry_client.snap(mode="auto")
                                 self.last_snap_time = now
-                                self.bird_history.clear() # Reset tracking
+                                self.detection_history.clear() # Reset tracking
                             else:
                                 logger.warning("Sentry not ready for snap")
                         else:
-                            logger.info(f"Bird detected but rejected due to blur. Score: {best_blur:.2f} < {self.blur_threshold}")
+                            logger.info(f"Target detected but rejected due to blur. Score: {best_blur:.2f} < {self.blur_threshold}")
 
                 # Draw visual indicator for 2 seconds after snap
                 if (now - self.last_snap_time) < 2.0:
